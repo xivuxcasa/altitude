@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Altitude · Helicopter view</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="altitude.css">
+<style>
+body { background-color: var(--sky); background-image: radial-gradient(var(--sky-dot) 1px, transparent 1.2px); background-size: 22px 22px; overflow-y: auto; }
+.wrap { padding: 20px 24px 40px; max-width: 1360px; margin: 0 auto; animation: descend .5s cubic-bezier(.2,.7,.2,1); }
+@keyframes descend { from { transform: scale(1.12); opacity: 0; } to { transform: none; opacity: 1; } }
+.top { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px 24px; flex-wrap: wrap; }
+h1 { font-family: var(--f-display); font-size: clamp(22px, 3vw, 32px); margin: 0; line-height: 1.05; }
+.top p { margin: 6px 0 0; color: var(--muted); }
+.stats { display: flex; gap: 6px; flex-wrap: wrap; }
+.stat { padding: 8px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; min-width: 84px; }
+.stat b { display: block; font-family: var(--f-mono); font-size: 18px; font-weight: 500; }
+.stat span { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 16px; }
+.modes { display: flex; gap: 4px; padding: 3px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; max-width: 100%; }
+.modes button { padding: 6px 12px; border-radius: 6px; color: var(--muted); white-space: nowrap; }
+.modes button.on { background: var(--fg); color: var(--surface); }
+.hint { color: var(--muted); font-size: 12.5px; }
+.src { font-size: 12px; padding: 3px 9px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); }
+.close { margin-left: auto; padding: 7px 12px; border-radius: 6px; background: var(--surface); border: 1px solid var(--line); }
+.wait { padding: 60px 0; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>Your inbox from above</h1>
+      <p>Grouped by who writes most, active clients, recurring topics and smart filters.</p>
+    </div>
+    <div class="stats" id="stats"></div>
+  </div>
+  <div class="bar">
+    <div class="modes" id="modes">
+      <button class="on" data-mode="all">All groups</button>
+      <button data-mode="person">People</button>
+      <button data-mode="client">Clients</button>
+      <button data-mode="topic">Topics</button>
+      <button data-mode="smart">Smart groups</button>
+    </div>
+    <span class="src" id="src">Loading…</span>
+    <span class="hint">Click a tile to open the group · <kbd>Esc</kbd> or <kbd>Space</kbd> to go back</span>
+    <button class="close" id="closeBtn">Back to inbox</button>
+  </div>
+  <div id="sections"><div class="wait">Waiting for your inbox…</div></div>
+</div>
+
+<script>
+  // In Outlook the dialog needs Office.js; in the browser preview (?preview=1) it talks to the pane with postMessage only.
+  if (!/[?&]preview=1/.test(location.search)) document.write('<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"><\/script>');
+</script>
+<script src="altitude-core.js"></script>
+<script>
+(() => {
+const A = window.Altitude;
+let inbox = null, groups = [], mode = 'all', inOffice = false, got = false;
+const $ = s => document.querySelector(s);
+
+function send(msg) {
+  if (inOffice && Office.context.ui && Office.context.ui.messageParent) Office.context.ui.messageParent(JSON.stringify(msg));
+  else if (window.parent !== window) window.parent.postMessage(msg, location.origin === 'null' ? '*' : location.origin);
+}
+
+function load(data) {
+  if (got) return; got = true;
+  inbox = typeof data === 'string' ? A.unpack(data) : data;
+  groups = A.buildGroups(inbox);
+  $('#src').textContent = inbox.source === 'graph' ? 'Your mailbox · Microsoft Graph' : 'Example inbox (demo data)';
+  render();
+}
+
+function render() {
+  const e = inbox.emails, a0 = new Date(inbox.now); a0.setHours(0, 0, 0, 0);
+  $('#stats').innerHTML = [[e.length, 'emails'], [e.filter(x => x.unread).length, 'unread'], [e.filter(x => x.date >= a0).length, 'this morning'], [e.filter(x => x.needsReply).length, 'need a reply'], [groups.length, 'groups']]
+    .map(([n, l]) => `<div class="stat"><b>${n}</b><span>${l}</span></div>`).join('');
+  $('#sections').innerHTML = A.SECTIONS.filter(s => mode === 'all' || mode === s.kind).map(s => {
+    const gs = groups.filter(g => g.kind === s.kind);
+    if (!gs.length) return '';
+    return `<section class="sec" data-kind="${s.kind}"><div class="sec-h"><h3>${s.title}</h3><span>${gs.length} groups · ${s.note}</span></div><div class="grid">${gs.map(g => A.tileHTML(g, inbox.now)).join('')}</div></section>`;
+  }).join('');
+  const first = document.querySelector('.tile'); first && first.focus({ preventScroll: true });
+}
+
+document.addEventListener('click', ev => {
+  const t = ev.target.closest('.tile'); if (t) { send({ type: 'group', key: t.dataset.group }); return; }
+  const m = ev.target.closest('#modes button');
+  if (m) { mode = m.dataset.mode; document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('on', b === m)); render(); return; }
+  if (ev.target.closest('#closeBtn')) send({ type: 'close' });
+});
+document.addEventListener('keydown', ev => {
+  if (ev.key === 'Escape' || ev.code === 'Space') { ev.preventDefault(); send({ type: 'close' }); return; }
+  if (!ev.key.startsWith('Arrow')) return;
+  const tiles = [...document.querySelectorAll('.tile')], cur = document.activeElement.closest && document.activeElement.closest('.tile');
+  if (!cur) { tiles[0] && tiles[0].focus(); return; }
+  const c = cur.getBoundingClientRect(), cx = c.left + c.width / 2, cy = c.top + c.height / 2;
+  const dir = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1] }[ev.key];
+  let best = null, bd = Infinity;
+  for (const t of tiles) {
+    if (t === cur) continue;
+    const r = t.getBoundingClientRect(), dx = r.left + r.width / 2 - cx, dy = r.top + r.height / 2 - cy;
+    const along = dx * dir[0] + dy * dir[1]; if (along <= 4) continue;
+    const d = along + Math.abs(dx * dir[1] + dy * dir[0]) * 2.2; if (d < bd) { bd = d; best = t; }
+  }
+  if (best) { best.focus(); best.scrollIntoView({ block: 'nearest' }); }
+  ev.preventDefault();
+});
+
+// Data arrives from the task pane: messageChild in Outlook, postMessage when previewed in a browser.
+window.addEventListener('message', ev => { if (ev.data && ev.data.type === 'data') load(ev.data.payload); });
+function fallback() {
+  if (got) return;
+  try { const s = localStorage.getItem('altitude-inbox'); if (s) return load(s); } catch (e) {}
+  load(A.demoInbox());
+}
+
+function start(info) {
+  inOffice = !!info.host;
+  if (inOffice && Office.context.requirements.isSetSupported('DialogApi', '1.2')) {
+    Office.context.ui.addHandlerAsync(Office.EventType.DialogParentMessageReceived, arg => {
+      const msg = JSON.parse(arg.message); if (msg.type === 'data') load(msg.payload);
+    });
+  }
+  send({ type: 'ready' });
+  setTimeout(fallback, 1200);
+}
+if (window.Office) Office.onReady(start); else start({ host: null });
+})();
+</script>
+</body>
+</html>

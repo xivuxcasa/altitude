@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Altitude</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="altitude.css">
+<style>
+body { background: var(--surface); }
+.pane { padding: 14px 14px 32px; display: flex; flex-direction: column; gap: 14px; }
+.head { display: flex; align-items: center; gap: 10px; }
+.head img { width: 28px; height: 28px; }
+.head h1 { font-family: var(--f-display); font-size: 20px; margin: 0; }
+.status { font-size: 12px; color: var(--muted); }
+.status b { color: var(--fg); font-weight: 500; }
+.go { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 11px 14px; border-radius: 8px; background: var(--accent); color: var(--surface); font-weight: 600; text-align: center; }
+.go:hover { filter: brightness(1.06); }
+.go kbd { border-color: var(--surface); }
+.connect { padding: 8px 12px; border-radius: 6px; border: 1px solid var(--accent); color: var(--accent); font-weight: 600; text-align: center; }
+.err { font-size: 12.5px; color: var(--flag); background: var(--surface-2); padding: 8px 10px; border-radius: 6px; }
+.gsec h2 { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--kind); margin: 6px 0 6px; font-weight: 600; }
+.grow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; width: 100%; padding: 8px 10px; border-radius: 8px; border-left: 3px solid var(--kind); background: var(--bg); margin-bottom: 6px; }
+.grow:hover { background: var(--kind-soft); }
+.grow .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.grow .ct { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.grow .sb { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.grow .spark { height: 16px; } .grow .spark i { width: 3px; }
+.ghead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.back { color: var(--accent); font-weight: 600; }
+.chip { padding: 3px 10px; border-radius: 99px; font-weight: 600; font-size: 12.5px; background: var(--kind-soft); color: var(--kind); }
+.mail { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 1px 8px; width: 100%; padding: 8px 4px; border-bottom: 1px solid var(--surface-2); }
+.mail:hover { background: var(--surface-2); }
+.mail .av { width: 28px; height: 28px; font-size: 11px; grid-row: span 2; }
+.mail .f { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.mail .w { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.mail .s { grid-column: 2 / 4; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mail.unread .f, .mail.unread .s { font-weight: 600; } .mail.unread .s { color: var(--unread); }
+.statusrow { display: flex; align-items: flex-start; gap: 8px; }
+.statusrow .status { flex: 1; min-width: 0; }
+.refresh { width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; color: var(--accent); font-size: 16px; flex: none; }
+.refresh:hover { background: var(--surface-2); }
+.refresh.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.search { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; background: var(--surface-2); border: 1px solid transparent; color: var(--muted); }
+.search:focus-within { border-color: var(--accent); background: var(--surface); }
+.search input { flex: 1; min-width: 0; border: 0; background: none; font: inherit; color: var(--fg); outline: none; }
+.tabs { display: flex; gap: 14px; border-bottom: 1px solid var(--line); margin: 8px 0 4px; }
+.tabs button { padding: 6px 0; color: var(--muted); border-bottom: 2px solid transparent; }
+.tabs button span { font-family: var(--f-mono); font-size: 11.5px; }
+.tabs button.on { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+.chip.plain { background: var(--surface-2); color: var(--muted); }
+.none { padding: 24px 4px; color: var(--muted); text-align: center; font-size: 13px; }
+.toast { position: fixed; left: 12px; right: 12px; bottom: 12px; padding: 10px 12px; border-radius: 8px; background: var(--fg); color: var(--surface); font-size: 12.5px; transition: opacity .3s; }
+.toast[hidden] { display: none; }
+/* Browser preview only: the dialog shown as an overlay */
+.overlay { position: fixed; inset: 0; border: 0; width: 100%; height: 100%; z-index: 9; background: var(--sky); }
+</style>
+</head>
+<body>
+<div class="pane">
+  <div class="head"><img src="assets/icon-64.png" alt=""><h1>Altitude</h1></div>
+  <div class="statusrow"><div class="status" id="status">Starting…</div><button class="refresh" id="refresh" hidden title="Refresh now" aria-label="Refresh now">↻</button></div>
+  <div id="err" class="err" hidden></div>
+  <button class="go" id="openHeli">Helicopter view <kbd>Space</kbd></button>
+  <button class="connect" id="connect" hidden>Connect my mailbox</button>
+  <label class="search"><span aria-hidden="true">⌕</span><input id="q" type="search" placeholder="Search sender or subject" autocomplete="off"></label>
+  <div id="body"></div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.27.0/lib/msal-browser.min.js"></script>
+<script src="config.js"></script>
+<script src="altitude-core.js"></script>
+<script>
+(() => {
+const A = window.Altitude, CFG = window.ALTITUDE_CONFIG || {};
+const $ = s => document.querySelector(s);
+let inOffice = false, inbox = null, groups = [], group = null, dialog = null, overlay = null;
+
+/* ---------- Data ---------- */
+async function graphInbox(interactive) {
+  const pca = await msal.createNestablePublicClientApplication({ auth: { clientId: CFG.clientId, authority: 'https://login.microsoftonline.com/common' } });
+  const req = { scopes: ['Mail.Read'] };
+  let tok;
+  try { tok = await pca.acquireTokenSilent(req); }
+  catch (e) { if (!interactive) throw new Error('sign-in needed, click Connect my mailbox'); tok = await pca.acquireTokenPopup(req); }
+  const max = CFG.maxMessages || 200;
+  let url = 'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=' + Math.min(max, 100)
+    + '&$orderby=receivedDateTime desc&$select=id,subject,from,receivedDateTime,isRead,hasAttachments,flag,bodyPreview,importance,inferenceClassification';
+  const all = [];
+  while (url && all.length < max) {
+    const r = await fetch(url, { headers: { Authorization: 'Bearer ' + tok.accessToken } });
+    if (!r.ok) throw new Error('Microsoft Graph returned ' + r.status + ' ' + (await r.text()).slice(0, 160));
+    const j = await r.json(); all.push(...j.value); url = j['@odata.nextLink'];
+  }
+  return A.fromGraph(all.slice(0, max), Office.context.mailbox.userProfile.emailAddress);
+}
+
+function apply(next, ms) {
+  inbox = next;
+  groups = A.buildGroups(inbox);
+  if (group && !groups.some(g => g.key === group)) group = null;
+  try { localStorage.setItem('altitude-inbox', A.pack(inbox)); } catch (e) {}
+  const t = new Date(), at = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+  $('#status').innerHTML = (inbox.source === 'graph'
+      ? `<b>Your mailbox</b> · ${inbox.emails.length} messages · updated ${at}${ms != null ? ` in ${(ms / 1000).toFixed(1)} s` : ''}`
+      : '<b>Example inbox</b> · 200 demo emails')
+    + ` · ${groups.length} groups${inOffice ? '' : ' · browser preview'}`;
+  $('#connect').hidden = !(inOffice && CFG.clientId && inbox.source !== 'graph');
+  $('#refresh').hidden = inbox.source !== 'graph';
+  render();
+}
+
+async function load(useGraph, interactive) {
+  const t0 = performance.now();
+  $('#err').hidden = true;
+  let next;
+  try {
+    next = useGraph ? await graphInbox(interactive) : A.demoInbox();
+  } catch (e) {
+    $('#err').textContent = 'Could not read your mailbox: ' + e.message + '. Showing the example inbox instead.';
+    $('#err').hidden = false;
+    next = A.demoInbox();
+  }
+  apply(next, Math.round(performance.now() - t0));
+  scheduleRefresh();
+}
+
+/* ---------- Auto refresh (connected mailbox only) ---------- */
+let refreshTimer = null, lastRefresh = 0, refreshing = false;
+const REFRESH_MS = (CFG.refreshMinutes || 5) * 60000;
+
+async function refresh() {
+  if (refreshing || !inbox || inbox.source !== 'graph') return;
+  refreshing = true; $('#refresh').classList.add('spin');
+  const t0 = performance.now();
+  try { apply(await graphInbox(false), Math.round(performance.now() - t0)); $('#err').hidden = true; }
+  catch (e) { $('#err').textContent = 'Refresh failed: ' + e.message + '. Showing the last loaded emails.'; $('#err').hidden = false; }
+  lastRefresh = Date.now(); refreshing = false; $('#refresh').classList.remove('spin');
+  scheduleRefresh();
+}
+function scheduleRefresh() {
+  clearTimeout(refreshTimer);
+  if (!inbox || inbox.source !== 'graph') return;
+  lastRefresh = lastRefresh || Date.now();
+  if (!document.hidden) refreshTimer = setTimeout(refresh, REFRESH_MS);
+}
+// Pause while the pane is hidden; catch up when it comes back.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) clearTimeout(refreshTimer);
+  else if (Date.now() - lastRefresh >= REFRESH_MS) refresh();
+  else scheduleRefresh();
+});
+
+/* ---------- Pane UI ---------- */
+let query = '', tab = 'all';
+
+// Every search word must appear somewhere in sender, address, subject or preview.
+function filtered(list, t = tab) {
+  if (t === 'unread') list = list.filter(e => e.unread);
+  if (t === 'flag') list = list.filter(e => e.flagged);
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length) list = list.filter(e => { const hay = (e.from + ' ' + e.email + ' ' + e.subject + ' ' + e.preview).toLowerCase(); return words.every(w => hay.includes(w)); });
+  return list;
+}
+
+function render() {
+  if (group || query) {
+    const g = group && groups.find(x => x.key === group);
+    const source = g ? g.items : inbox.emails;
+    const list = filtered(source);
+    const tabs = [['all', 'All'], ['unread', 'Unread'], ['flag', 'Flagged']].map(([k, l]) => [k, l, filtered(source, k).length]);
+    $('#body').innerHTML = `<div class="ghead"${g ? ` data-kind="${g.kind}"` : ''}><button class="back" id="back">← All groups</button>`
+      + (g ? `<span class="chip">${A.esc(g.name)} · ${g.items.length}</span>` : `<span class="chip plain">Whole inbox</span>`) + `</div>`
+      + `<div class="tabs" role="tablist">${tabs.map(([k, l, n]) => `<button role="tab" data-tab="${k}" class="${tab === k ? 'on' : ''}" aria-selected="${tab === k}">${l} <span>${n}</span></button>`).join('')}</div>`
+      + (list.length
+        ? list.map(e => `<button class="mail${e.unread ? ' unread' : ''}" data-id="${A.esc(e.id)}">${A.avatar(e)}<span class="f">${A.esc(e.from)}</span><span class="w">${e.flagged ? '⚑ ' : ''}${A.shortWhen(e.date, inbox.now)}</span><span class="s">${A.esc(e.subject)}</span></button>`).join('')
+        : `<div class="none">No emails match${query ? ` “${A.esc(query)}”` : ''} in this view.</div>`);
+    return;
+  }
+  {
+    $('#body').innerHTML = A.SECTIONS.map(s => {
+      const gs = groups.filter(g => g.kind === s.kind); if (!gs.length) return '';
+      return `<div class="gsec" data-kind="${s.kind}"><h2>${s.title}</h2>${gs.map(g => {
+        const u = g.items.filter(e => e.unread).length;
+        return `<button class="grow" data-group="${A.esc(g.key)}" data-kind="${g.kind}"><span class="nm">${A.esc(g.name)}</span><span class="ct">${g.items.length}</span><span class="sb">${u ? u + ' unread · ' : ''}${A.esc(g.items[0].subject)}</span></button>`;
+      }).join('')}</div>`;
+    }).join('');
+  }
+}
+
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 3500); }
+
+function openMail(id) {
+  if (inbox.source !== 'graph') { toast('This is an example email. With your mailbox connected, Outlook opens the real message.'); return; }
+  try { Office.context.mailbox.displayMessageForm(Office.context.mailbox.convertToEwsId(id, Office.MailboxEnums.RestVersion.v2_0)); }
+  catch (e) { toast('Outlook could not open this message: ' + e.message); }
+}
+
+function showGroup(key) { group = key; tab = 'all'; render(); window.scrollTo(0, 0); }
+function backToGroups() { group = null; query = ''; tab = 'all'; $('#q').value = ''; render(); }
+
+/* ---------- Helicopter view (dialog) ---------- */
+function onDialogMessage(msg) {
+  if (msg.type === 'ready') {
+    if (dialog && dialog.messageChild) dialog.messageChild(JSON.stringify({ type: 'data', payload: A.pack(inbox) }));
+    else if (overlay) overlay.contentWindow.postMessage({ type: 'data', payload: A.pack(inbox) }, '*');
+  } else if (msg.type === 'group') { closeHeli(); showGroup(msg.key); }
+  else if (msg.type === 'close') closeHeli();
+}
+
+function openHeli() {
+  if (!inbox) return;
+  if (inOffice) {
+    const url = new URL('dialog.html', location.href).href;
+    Office.context.ui.displayDialogAsync(url, { height: 88, width: 88, displayInIframe: true }, res => {
+      if (res.status !== Office.AsyncResultStatus.Succeeded) { toast('Could not open the helicopter view: ' + res.error.message); return; }
+      dialog = res.value;
+      dialog.addEventHandler(Office.EventType.DialogMessageReceived, arg => onDialogMessage(JSON.parse(arg.message)));
+      dialog.addEventHandler(Office.EventType.DialogEventReceived, () => { dialog = null; });
+    });
+  } else {
+    overlay = document.createElement('iframe');
+    overlay.className = 'overlay'; overlay.src = 'dialog.html?preview=1'; overlay.title = 'Helicopter view';
+    document.body.appendChild(overlay);
+  }
+}
+function closeHeli() {
+  if (dialog) { dialog.close(); dialog = null; }
+  if (overlay) { overlay.remove(); overlay = null; $('#openHeli').focus(); }
+}
+window.addEventListener('message', ev => { if (overlay && ev.source === overlay.contentWindow && ev.data && ev.data.type) onDialogMessage(ev.data); });
+
+document.addEventListener('click', ev => {
+  const t = ev.target;
+  if (t.closest('#openHeli')) return openHeli();
+  if (t.closest('#connect')) return load(true, true);
+  if (t.closest('#refresh')) return refresh();
+  if (t.closest('#back')) return backToGroups();
+  const tb = t.closest('.tabs button'); if (tb) { tab = tb.dataset.tab; return render(); }
+  const g = t.closest('.grow'); if (g) return showGroup(g.dataset.group);
+  const m = t.closest('.mail'); if (m) return openMail(m.dataset.id);
+});
+document.addEventListener('keydown', ev => {
+  if (ev.code === 'Space' && !ev.target.closest('input, textarea') && !overlay) { ev.preventDefault(); openHeli(); }
+  if (ev.key === 'Escape' && (group || query)) backToGroups();
+});
+$('#q').addEventListener('input', ev => { query = ev.target.value.trim(); if (inbox) render(); });
+
+Office.onReady(info => {
+  inOffice = !!info.host;
+  load(inOffice && !!CFG.clientId);
+});
+})();
+</script>
+</body>
+</html>

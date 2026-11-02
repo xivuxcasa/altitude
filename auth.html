@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Altitude · Sign in</title>
+<link rel="stylesheet" href="altitude.css">
+<style>
+body { display: grid; place-items: center; min-height: 100%; padding: 24px; text-align: center; }
+.box { max-width: 360px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.box img { width: 40px; height: 40px; }
+.box p { margin: 0; color: var(--muted); }
+.err { color: var(--flag); }
+</style>
+</head>
+<body>
+<div class="box">
+  <img src="assets/icon-64.png" alt="">
+  <b>Altitude</b>
+  <p id="msg">Signing you in to read your inbox…</p>
+</div>
+
+<!-- Sign-in window for mailboxes without nested app authentication (Outlook.com).
+     Opened by the task pane with Office's dialog API; it signs in with a normal MSAL redirect
+     and hands the Graph access token back to the pane with messageParent. -->
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.27.0/lib/msal-browser.min.js"></script>
+<script src="config.js"></script>
+<script>
+(() => {
+const CFG = window.ALTITUDE_CONFIG || {};
+const SCOPES = ['Mail.Read'];
+const msg = t => { document.getElementById('msg').textContent = t; };
+const fail = e => {
+  msg('Sign-in failed: ' + (e && e.message || e));
+  document.getElementById('msg').className = 'err';
+  send({ type: 'error', message: String(e && e.message || e) });
+};
+function send(o) { try { Office.context.ui.messageParent(JSON.stringify(o)); } catch (e) {} }
+
+Office.onReady(async () => {
+  if (!CFG.clientId) return fail('no app ID set in config.js');
+  try {
+    const pca = new msal.PublicClientApplication({
+      auth: { clientId: CFG.clientId, authority: 'https://login.microsoftonline.com/common', redirectUri: new URL('auth.html', location.href).href },
+      cache: { cacheLocation: 'localStorage' },
+    });
+    await pca.initialize();
+    const back = await pca.handleRedirectPromise();
+    const account = (back && back.account) || pca.getAllAccounts()[0];
+    let res = back;
+    if (!res && account) {
+      try { res = await pca.acquireTokenSilent({ scopes: SCOPES, account }); } catch (e) { res = null; }
+    }
+    if (!res) { msg('Opening the Microsoft sign-in page…'); return pca.acquireTokenRedirect({ scopes: SCOPES, account }); }
+    msg('Signed in. You can close this window if it stays open.');
+    send({ type: 'token', accessToken: res.accessToken, expiresOn: res.expiresOn ? res.expiresOn.getTime() : Date.now() + 50 * 60000 });
+  } catch (e) { fail(e); }
+});
+})();
+</script>
+</body>
+</html>

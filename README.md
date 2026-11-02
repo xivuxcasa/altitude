@@ -49,10 +49,16 @@ If **Add from file** is missing, your Microsoft 365 admin has turned off custom 
 ### 4. Connect your mailbox (optional, needs a work or school account)
 1. In https://entra.microsoft.com go to **App registrations → New registration** and name it "Altitude".
    - Supported account types: **Accounts in any organizational directory and personal Microsoft accounts**, or just your own organisation.
-2. Under **Authentication → Add a platform → Single-page application**, add this redirect URI: `brk-multihub://xivuxcasa.github.io`
+2. Under **Authentication → Add a platform → Single-page application**, add these two redirect URIs:
+   - `https://xivuxcasa.github.io/altitude/auth.html` (sign-in window, used in Outlook.com)
+   - `brk-multihub://xivuxcasa.github.io` (nested app authentication, used in Microsoft 365 mailboxes)
 3. Under **API permissions → Add → Microsoft Graph → Delegated**, add `Mail.Read` and `User.Read`.
 4. Copy the **Application (client) ID** into `config.js` as `clientId`, then commit and push again.
 5. In the panel, click **Connect my mailbox** and approve the permissions.
+
+### How sign-in works
+- **Microsoft 365 work or school mailboxes:** nested app authentication. You sign in silently through Outlook itself.
+- **Outlook.com mailboxes:** Outlook doesn't support nested app authentication there, so **Connect my mailbox** opens a small Microsoft sign-in window (`auth.html`). The access token lasts about an hour and is kept in the add-in's browser storage. When it expires, auto refresh stops and **Connect my mailbox** appears again. Reconnecting usually takes one click, without typing your password.
 
 ## Updating
 

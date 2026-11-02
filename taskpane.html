@@ -80,18 +80,52 @@ const $ = s => document.querySelector(s);
 let inOffice = false, inbox = null, groups = [], group = null, dialog = null, overlay = null;
 
 /* ---------- Data ---------- */
-async function graphInbox(interactive) {
+/* Tokens: nested app authentication where Outlook supports it (Microsoft 365 mailboxes);
+   otherwise (Outlook.com) a sign-in window opened with the dialog API, see auth.html. */
+const SCOPES = ['Mail.Read'];
+const TOKEN_KEY = 'altitude-token';
+
+async function naaToken(interactive) {
   const pca = await msal.createNestablePublicClientApplication({ auth: { clientId: CFG.clientId, authority: 'https://login.microsoftonline.com/common' } });
-  const req = { scopes: ['Mail.Read'] };
-  let tok;
-  try { tok = await pca.acquireTokenSilent(req); }
-  catch (e) { if (!interactive) throw new Error('sign-in needed, click Connect my mailbox'); tok = await pca.acquireTokenPopup(req); }
+  try { return (await pca.acquireTokenSilent({ scopes: SCOPES })).accessToken; }
+  catch (e) { if (!interactive) throw new Error('sign-in needed, click Connect my mailbox'); return (await pca.acquireTokenPopup({ scopes: SCOPES })).accessToken; }
+}
+
+function cachedToken() {
+  try { const t = JSON.parse(localStorage.getItem(TOKEN_KEY)); if (t && t.expiresOn - Date.now() > 2 * 60000) return t.accessToken; } catch (e) {}
+  return null;
+}
+
+function dialogToken(interactive) {
+  const cached = cachedToken();
+  if (cached) return Promise.resolve(cached);
+  if (!interactive) return Promise.reject(new Error('your sign-in has expired, click Connect my mailbox'));
+  return new Promise((resolve, reject) => {
+    Office.context.ui.displayDialogAsync(new URL('auth.html', location.href).href, { height: 60, width: 30, displayInIframe: false }, res => {
+      if (res.status !== Office.AsyncResultStatus.Succeeded) return reject(new Error('could not open the sign-in window (' + res.error.message + ')'));
+      const d = res.value;
+      d.addEventHandler(Office.EventType.DialogMessageReceived, arg => {
+        const m = JSON.parse(arg.message); d.close();
+        if (m.type === 'token') { try { localStorage.setItem(TOKEN_KEY, JSON.stringify(m)); } catch (e) {} resolve(m.accessToken); }
+        else reject(new Error(m.message || 'sign-in failed'));
+      });
+      d.addEventHandler(Office.EventType.DialogEventReceived, () => reject(new Error('the sign-in window was closed')));
+    });
+  });
+}
+
+const useNaa = () => Office.context.requirements.isSetSupported('NestedAppAuth', '1.1');
+const getToken = interactive => useNaa() ? naaToken(interactive) : dialogToken(interactive);
+
+async function graphInbox(interactive) {
+  let token = await getToken(interactive);
   const max = CFG.maxMessages || 200;
   let url = 'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=' + Math.min(max, 100)
     + '&$orderby=receivedDateTime desc&$select=id,subject,from,receivedDateTime,isRead,hasAttachments,flag,bodyPreview,importance,inferenceClassification';
   const all = [];
   while (url && all.length < max) {
-    const r = await fetch(url, { headers: { Authorization: 'Bearer ' + tok.accessToken } });
+    const r = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+    if (r.status === 401) { try { localStorage.removeItem(TOKEN_KEY); } catch (e) {} throw new Error('your sign-in has expired, click Connect my mailbox'); }
     if (!r.ok) throw new Error('Microsoft Graph returned ' + r.status + ' ' + (await r.text()).slice(0, 160));
     const j = await r.json(); all.push(...j.value); url = j['@odata.nextLink'];
   }
@@ -137,7 +171,10 @@ async function refresh() {
   refreshing = true; $('#refresh').classList.add('spin');
   const t0 = performance.now();
   try { apply(await graphInbox(false), Math.round(performance.now() - t0)); $('#err').hidden = true; }
-  catch (e) { $('#err').textContent = 'Refresh failed: ' + e.message + '. Showing the last loaded emails.'; $('#err').hidden = false; }
+  catch (e) {
+    $('#err').textContent = 'Refresh failed: ' + e.message + '. Showing the last loaded emails.'; $('#err').hidden = false;
+    if (/Connect my mailbox/.test(e.message)) $('#connect').hidden = false;
+  }
   lastRefresh = Date.now(); refreshing = false; $('#refresh').classList.remove('spin');
   scheduleRefresh();
 }
